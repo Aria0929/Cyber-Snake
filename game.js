@@ -177,6 +177,7 @@ function togglePause() {
         document.getElementById('pause-btn').textContent = '暫停';
         playTone(523, 'sine', 0.1);
         
+        clearInterval(gameIntervalId); // 安全防範：恢復時先清空舊定時器
         const speed = DIFFICULTIES[document.getElementById('difficulty').value];
         gameIntervalId = setInterval(gameStep, speed);
     } else {
@@ -375,6 +376,7 @@ function changeDirection(x, y) {
 
 // 遊戲結束
 function gameOver() {
+    if (isGameOver) return; // 防止重複觸發死亡與多重定時器 Bug
     isGameOver = true;
     isPlaying = false;
     isExploding = true; // 進入爆炸動畫狀態
