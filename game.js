@@ -23,6 +23,10 @@ let isPaused = false;
 let isGameOver = false;
 let soundEnabled = true;
 
+// 死亡延遲與爆炸狀態（防堵雙重死亡 Bug）
+let gameOverTimeoutId = null;
+let isExploding = false;
+
 // Web Audio API 內容
 let audioCtx = null;
 
@@ -88,6 +92,13 @@ function resetGameOnLogin() {
 
 // 重設遊戲狀態
 function resetGameData() {
+    // 清除舊的 Game Over 延遲定時器，防堵雙重彈窗 Bug
+    if (gameOverTimeoutId) {
+        clearTimeout(gameOverTimeoutId);
+        gameOverTimeoutId = null;
+    }
+    isExploding = false;
+
     // 蛇的初始位置：中間，長度為 3
     const startX = Math.floor(GRID_COUNT / 2);
     const startY = Math.floor(GRID_COUNT / 2) + 2;
@@ -286,6 +297,9 @@ function gameStep() {
 
 // 處理鍵盤按鍵
 function handleKeyDown(e) {
+    // 如果正在播放死亡爆炸動畫，忽略所有按鍵（防止雙重開始 Bug）
+    if (isExploding) return;
+
     // 只有當登入遮罩顯示時，才忽略鍵盤事件（避免干擾密碼/帳號輸入）
     const authOverlay = document.getElementById('auth-overlay');
     if (authOverlay && !authOverlay.classList.contains('hidden')) {
@@ -363,6 +377,7 @@ function changeDirection(x, y) {
 function gameOver() {
     isGameOver = true;
     isPlaying = false;
+    isExploding = true; // 進入爆炸動畫狀態
     stopGameLoop();
 
     // 觸發死亡音效與特效
@@ -376,8 +391,9 @@ function gameOver() {
     // 啟動死亡粒子動畫迴圈
     requestAnimationFrame(updateParticlesLoop);
 
-    // 延遲顯示 Game Over Overlay
-    setTimeout(() => {
+    // 延遲顯示 Game Over Overlay，並保存定時器 ID
+    gameOverTimeoutId = setTimeout(() => {
+        isExploding = false; // 結束爆炸動畫狀態
         document.getElementById('final-score').textContent = score;
         const recordMsg = document.getElementById('new-record-msg');
         if (isNewRecord) {
