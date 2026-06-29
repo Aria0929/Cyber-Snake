@@ -1,12 +1,30 @@
-// 帳號與排行榜的 LocalStorage Key
+// ==========================================
+// 雲端資料庫配置 (Google Firebase)
+// ==========================================
+// 💡 為了實現跨電腦的「真‧全域排行榜」與「跨裝置登入」，本專案整合了 Google Firebase。
+// 💡 若您想啟用全域排行榜，請到 Firebase Console 免費建立專案，並將您的 Config 貼在下方：
+const firebaseConfig = {
+    apiKey: "AIzaSyAwtFU4H427t3C6cJtkdVNEEmt55cb9W1Y",
+    authDomain: "cyber-snake-bee31.firebaseapp.com",
+    databaseURL: "https://cyber-snake-bee31-default-rtdb.firebaseio.com",
+    projectId: "cyber-snake-bee31",
+    storageBucket: "cyber-snake-bee31.firebasestorage.app",
+    messagingSenderId: "141518279757",
+    appId: "1:141518279757:web:c6c4330482062e50043804",
+    measurementId: "G-5YRXT80BMC"
+};
+
+// 帳號與排行榜的 LocalStorage Key (備用/本地降級模式使用)
 const USERS_KEY = 'cyber_snake_users';
 const LEADERBOARD_KEY = 'cyber_snake_leaderboard';
 
-// 記憶體中暫存的當前使用者
+// 系統狀態變數
 let currentUser = null;
+let database = null;
+let isFirebaseEnabled = false;
 
-// 初始化帳號系統
-function initAuth() {
+// 初始化帳號系統與資料庫連線
+async function initAuth() {
     const authOverlay = document.getElementById('auth-overlay');
     const authForm = document.getElementById('auth-form');
     const usernameInput = document.getElementById('username');
@@ -17,11 +35,13 @@ function initAuth() {
     const guestBtn = document.getElementById('guest-btn');
     const authMessage = document.getElementById('auth-message');
     const logoutBtn = document.getElementById('logout-btn');
-    const displayUsername = document.getElementById('display-username');
 
     let currentTab = 'login'; // 'login' 或 'register'
 
-    // 切換 Tab
+    // 1. 初始化 Firebase 雲端資料庫
+    checkAndInitFirebase();
+
+    // 2. 切換 Tab
     tabLogin.addEventListener('click', () => {
         currentTab = 'login';
         tabLogin.classList.add('active');
@@ -40,51 +60,71 @@ function initAuth() {
         authMessage.textContent = '';
     });
 
-    // 提交表單
-    authForm.addEventListener('submit', (e) => {
+    // 3. 提交登入/註冊表單
+    authForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const username = usernameInput.value.trim();
         const password = passwordInput.value;
 
         if (!username || !password) {
+            authMessage.style.color = '#ff2e93';
             authMessage.textContent = '請填寫完整資訊';
             return;
         }
 
-        if (currentTab === 'register') {
-            const success = registerUser(username, password);
-            if (success) {
-                authMessage.style.color = '#00ffcc';
-                authMessage.textContent = '註冊成功！已為您自動登入...';
-                setTimeout(() => {
+        // 帳號名稱安全性檢查
+        if (username.includes('.') || username.includes('#') || username.includes('$') || username.includes('[') || username.includes(']')) {
+            authMessage.style.color = '#ff2e93';
+            authMessage.textContent = '用戶名不得包含 . # $ [ ] 字元';
+            return;
+        }
+
+        submitBtn.disabled = true;
+        authMessage.style.color = '#94a3b8';
+        authMessage.textContent = '驗證中...';
+
+        try {
+            if (currentTab === 'register') {
+                const success = await registerUser(username, password);
+                if (success) {
+                    authMessage.style.color = '#00ffcc';
+                    authMessage.textContent = '註冊成功！已為您自動登入...';
+                    setTimeout(() => {
+                        login(username);
+                    }, 1000);
+                } else {
+                    authMessage.style.color = '#ff2e93';
+                    authMessage.textContent = '該用戶名稱已被註冊！';
+                }
+            } else {
+                const success = await verifyUser(username, password);
+                if (success) {
                     login(username);
-                }, 1000);
-            } else {
-                authMessage.style.color = '#ff2e93';
-                authMessage.textContent = '該用戶名稱已被註冊！';
+                } else {
+                    authMessage.style.color = '#ff2e93';
+                    authMessage.textContent = '帳號或密碼錯誤！';
+                }
             }
-        } else {
-            const success = verifyUser(username, password);
-            if (success) {
-                login(username);
-            } else {
-                authMessage.style.color = '#ff2e93';
-                authMessage.textContent = '帳號或密碼錯誤！';
-            }
+        } catch (err) {
+            authMessage.style.color = '#ff2e93';
+            authMessage.textContent = '連線失敗，請重試！';
+            console.error(err);
+        } finally {
+            submitBtn.disabled = false;
         }
     });
 
-    // 遊客登入
+    // 4. 遊客登入
     guestBtn.addEventListener('click', () => {
         login(null);
     });
 
-    // 登出按鈕
+    // 5. 登出按鈕
     logoutBtn.addEventListener('click', () => {
         logout();
     });
 
-    // 檢查 Session
+    // 6. 檢查現有 Session
     const savedUser = sessionStorage.getItem('cyber_snake_current_user');
     if (savedUser) {
         if (savedUser === 'Guest') {
@@ -96,150 +136,219 @@ function initAuth() {
         authOverlay.classList.remove('hidden');
     }
 
+    // 7. 載入並渲染排行榜
     renderLeaderboard();
 }
 
-// 註冊帳號
-function registerUser(username, password) {
-    const users = JSON.parse(localStorage.getItem(USERS_KEY)) || {};
-    if (users[username]) {
-        return false; // 已存在
-    }
-    users[username] = {
-        password: password, // 單機版小遊戲，以明碼簡化儲存
-        highScore: 0
-    };
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-    return true;
-}
-
-// 驗證登入
-function verifyUser(username, password) {
-    const users = JSON.parse(localStorage.getItem(USERS_KEY)) || {};
-    if (!users[username]) return false;
-    return users[username].password === password;
-}
-
-// 執行登入
-function login(username) {
-    const authOverlay = document.getElementById('auth-overlay');
-    const displayUsername = document.getElementById('display-username');
-    const personalHighVal = document.getElementById('personal-high');
-
-    if (username) {
-        currentUser = username;
-        sessionStorage.setItem('cyber_snake_current_user', username);
-        displayUsername.textContent = username;
-        displayUsername.className = 'neon-text-blue';
-        document.querySelector('.user-status').textContent = '傳奇冒險者';
-        
-        // 讀取個人最高紀錄
-        const score = getPersonalHighScore();
-        personalHighVal.textContent = String(score).padStart(3, '0');
+// 檢查並初始化 Firebase 連線
+function checkAndInitFirebase() {
+    const subtitle = document.querySelector('.auth-card .subtitle');
+    if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+        try {
+            firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+            isFirebaseEnabled = true;
+            console.log("⚡ Firebase 雲端資料庫已成功載入！啟用「跨電腦全域排行榜」模式。");
+            if (subtitle) {
+                subtitle.innerHTML = '免費版貪食蛇 ‧ <span style="color: #00ffcc;">雲端全域排行榜模式</span>';
+            }
+        } catch (e) {
+            console.error("Firebase 初始化失敗，自動降級為本地 LocalStorage 模式:", e);
+            isFirebaseEnabled = false;
+        }
     } else {
-        currentUser = 'Guest';
-        sessionStorage.setItem('cyber_snake_current_user', 'Guest');
-        displayUsername.textContent = '遊客 (Guest)';
-        displayUsername.className = 'neon-text-pink';
-        document.querySelector('.user-status').textContent = '臨時冒險者';
-        personalHighVal.textContent = '000';
-    }
-
-    // 隱藏登入層
-    authOverlay.classList.add('hidden');
-    if (document.activeElement) {
-        document.activeElement.blur();
-    }
-    
-    // 重設輸入框
-    document.getElementById('username').value = '';
-    document.getElementById('password').value = '';
-    document.getElementById('auth-message').textContent = '';
-
-    // 渲染排行榜
-    renderLeaderboard();
-
-    // 如果遊戲模組已經載入，重設遊戲狀態
-    if (typeof resetGameOnLogin === 'function') {
-        resetGameOnLogin();
-    }
-}
-
-// 登出
-function logout() {
-    currentUser = null;
-    sessionStorage.removeItem('cyber_snake_current_user');
-    document.getElementById('auth-overlay').classList.remove('hidden');
-    
-    // 重設分數顯示
-    document.getElementById('current-score').textContent = '000';
-    document.getElementById('personal-high').textContent = '000';
-}
-
-// 獲取個人最高紀錄
-function getPersonalHighScore() {
-    if (!currentUser || currentUser === 'Guest') return 0;
-    const users = JSON.parse(localStorage.getItem(USERS_KEY)) || {};
-    return (users[currentUser] && users[currentUser].highScore) ? users[currentUser].highScore : 0;
-}
-
-// 更新最高紀錄與排行榜
-function saveUserScore(score) {
-    if (!currentUser || currentUser === 'Guest') return false; // 遊客不記錄至全域/個人榜
-
-    const users = JSON.parse(localStorage.getItem(USERS_KEY)) || {};
-    let isNewRecord = false;
-
-    if (users[currentUser]) {
-        if (score > users[currentUser].highScore) {
-            users[currentUser].highScore = score;
-            localStorage.setItem(USERS_KEY, JSON.stringify(users));
-            isNewRecord = true;
-            
-            // 更新畫面的個人最高紀錄
-            document.getElementById('personal-high').textContent = String(score).padStart(3, '0');
+        console.log("ℹ️ 未設定 Firebase API Key，目前正自動運行於「本機 LocalStorage 儲存」模式。");
+        if (subtitle) {
+            subtitle.innerHTML = '免費版貪食蛇 ‧ <span style="color: #ff2e93;">本機遊玩存儲模式</span>';
         }
     }
+}
 
-    // 更新排行榜
-    updateLeaderboard(currentUser, score);
+// ==========================================
+// 帳號資料讀寫函數 (相容雲端 / 本地雙模式)
+// ==========================================
+
+// 註冊帳號
+async function registerUser(username, password) {
+    if (isFirebaseEnabled) {
+        // [雲端模式]
+        const snapshot = await database.ref('users/' + username).once('value');
+        if (snapshot.exists()) {
+            return false; // 使用者已存在
+        }
+        // 建立新用戶，預設最高分為 0
+        await database.ref('users/' + username).set({
+            password: password,
+            highScore: 0
+        });
+        return true;
+    } else {
+        // [本地模式]
+        const users = JSON.parse(localStorage.getItem(USERS_KEY)) || {};
+        if (users[username]) {
+            return false; // 已存在
+        }
+        users[username] = {
+            password: password,
+            highScore: 0
+        };
+        localStorage.setItem(USERS_KEY, JSON.stringify(users));
+        return true;
+    }
+}
+
+// 驗證帳密
+async function verifyUser(username, password) {
+    if (isFirebaseEnabled) {
+        // [雲端模式]
+        const snapshot = await database.ref('users/' + username).once('value');
+        if (!snapshot.exists()) return false;
+        const userData = snapshot.val();
+        return userData.password === password;
+    } else {
+        // [本地模式]
+        const users = JSON.parse(localStorage.getItem(USERS_KEY)) || {};
+        if (!users[username]) return false;
+        return users[username].password === password;
+    }
+}
+
+// 獲取當前用戶歷史最高紀錄
+async function getPersonalHighScore() {
+    if (!currentUser || currentUser === 'Guest') return 0;
+    
+    if (isFirebaseEnabled) {
+        // [雲端模式]
+        try {
+            const snapshot = await database.ref('users/' + currentUser + '/highScore').once('value');
+            return snapshot.exists() ? snapshot.val() : 0;
+        } catch (e) {
+            console.error(e);
+            return 0;
+        }
+    } else {
+        // [本地模式]
+        const users = JSON.parse(localStorage.getItem(USERS_KEY)) || {};
+        return (users[currentUser] && users[currentUser].highScore) ? users[currentUser].highScore : 0;
+    }
+}
+
+// ==========================================
+// 排行榜更新與渲染 (相容雲端 / 本地雙模式)
+// ==========================================
+
+// 更新當前登入者分數，若有更新則同步雲端與排行榜
+async function saveUserScore(score) {
+    if (!currentUser || currentUser === 'Guest') return false;
+
+    let isNewRecord = false;
+
+    if (isFirebaseEnabled) {
+        // [雲端模式]
+        try {
+            const currentRecord = await getPersonalHighScore();
+            if (score > currentRecord) {
+                // 1. 更新個人最高分數
+                await database.ref('users/' + currentUser + '/highScore').set(score);
+                isNewRecord = true;
+                
+                // 2. 即時更新介面上的個人高分顯示
+                document.getElementById('personal-high').textContent = String(score).padStart(3, '0');
+            }
+            
+            // 3. 同步更新全域排行榜（不管是新紀錄還是高分，都會進入排行榜權重計算）
+            await updateCloudLeaderboard(currentUser, score);
+        } catch (e) {
+            console.error("更新雲端分數失敗:", e);
+        }
+    } else {
+        // [本地模式]
+        const users = JSON.parse(localStorage.getItem(USERS_KEY)) || {};
+        if (users[currentUser]) {
+            if (score > users[currentUser].highScore) {
+                users[currentUser].highScore = score;
+                localStorage.setItem(USERS_KEY, JSON.stringify(users));
+                isNewRecord = true;
+                
+                // 更新介面
+                document.getElementById('personal-high').textContent = String(score).padStart(3, '0');
+            }
+        }
+        updateLocalLeaderboard(currentUser, score);
+    }
+
     return isNewRecord;
 }
 
-// 更新殿堂排行榜
-function updateLeaderboard(username, score) {
+// 雲端排行榜更新
+async function updateCloudLeaderboard(username, score) {
+    try {
+        const leaderboardRef = database.ref('leaderboard');
+        const snapshot = await leaderboardRef.once('value');
+        let leaderboard = snapshot.exists() ? snapshot.val() : [];
+
+        // 尋找此用戶是否已在榜中
+        const userIndex = leaderboard.findIndex(entry => entry.username === username);
+        
+        if (userIndex !== -1) {
+            if (score > leaderboard[userIndex].score) {
+                leaderboard[userIndex].score = score;
+            }
+        } else {
+            leaderboard.push({ username, score });
+        }
+
+        // 排序前 5 名
+        leaderboard.sort((a, b) => b.score - a.score);
+        leaderboard = leaderboard.slice(0, 5);
+
+        // 寫回雲端
+        await leaderboardRef.set(leaderboard);
+    } catch (e) {
+        console.error("雲端排行榜寫入出錯:", e);
+    }
+}
+
+// 本地排行榜更新
+function updateLocalLeaderboard(username, score) {
     let leaderboard = JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || [];
-    
-    // 尋找此用戶是否已在榜中
     const userIndex = leaderboard.findIndex(entry => entry.username === username);
     
     if (userIndex !== -1) {
-        // 如果新分數比榜上的分數高，則更新
         if (score > leaderboard[userIndex].score) {
             leaderboard[userIndex].score = score;
         }
     } else {
-        // 新增至排行榜
         leaderboard.push({ username, score });
     }
 
-    // 排序（分數由大到小）
     leaderboard.sort((a, b) => b.score - a.score);
-
-    // 只保留前 5 名
     leaderboard = leaderboard.slice(0, 5);
 
     localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(leaderboard));
     renderLeaderboard();
 }
 
-// 渲染排行榜 UI
+// 渲染排行榜 UI (雲端模式將使用 Realtime Listeners 實時推送更新)
 function renderLeaderboard() {
     const listEl = document.getElementById('leaderboard-list');
     if (!listEl) return;
 
-    const leaderboard = JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || [];
+    if (isFirebaseEnabled) {
+        // [雲端模式] 監聽雲端資料庫的變化，實現實時同步更新
+        database.ref('leaderboard').on('value', (snapshot) => {
+            const leaderboard = snapshot.exists() ? snapshot.val() : [];
+            updateLeaderboardUI(listEl, leaderboard);
+        });
+    } else {
+        // [本地模式] 直接渲染 LocalStorage 資料
+        const leaderboard = JSON.parse(localStorage.getItem(LEADERBOARD_KEY)) || [];
+        updateLeaderboardUI(listEl, leaderboard);
+    }
+}
 
+// 渲染 DOM 的輔助函數
+function updateLeaderboardUI(listEl, leaderboard) {
     if (leaderboard.length === 0) {
         listEl.innerHTML = '<li class="empty-list">尚無挑戰紀錄</li>';
         return;
@@ -261,7 +370,63 @@ function renderLeaderboard() {
     }).join('');
 }
 
-// 防止 HTML 注入的安全函式
+// 執行登入程序
+async function login(username) {
+    const authOverlay = document.getElementById('auth-overlay');
+    const displayUsername = document.getElementById('display-username');
+    const personalHighVal = document.getElementById('personal-high');
+
+    if (username) {
+        currentUser = username;
+        sessionStorage.setItem('cyber_snake_current_user', username);
+        displayUsername.textContent = username;
+        displayUsername.className = 'neon-text-blue';
+        document.querySelector('.user-status').textContent = '傳奇冒險者';
+        
+        // 讀取個人最高紀錄 (雲端/本地自動適配)
+        const score = await getPersonalHighScore();
+        personalHighVal.textContent = String(score).padStart(3, '0');
+    } else {
+        currentUser = 'Guest';
+        sessionStorage.setItem('cyber_snake_current_user', 'Guest');
+        displayUsername.textContent = '遊客 (Guest)';
+        displayUsername.className = 'neon-text-pink';
+        document.querySelector('.user-status').textContent = '臨時冒險者';
+        personalHighVal.textContent = '000';
+    }
+
+    // 隱藏登入層並釋放焦點
+    authOverlay.classList.add('hidden');
+    if (document.activeElement) {
+        document.activeElement.blur();
+    }
+    
+    // 重設輸入框
+    document.getElementById('username').value = '';
+    document.getElementById('password').value = '';
+    document.getElementById('auth-message').textContent = '';
+
+    // 重新渲染排行榜
+    renderLeaderboard();
+
+    // 重設遊戲狀態
+    if (typeof resetGameOnLogin === 'function') {
+        resetGameOnLogin();
+    }
+}
+
+// 登出
+function logout() {
+    currentUser = null;
+    sessionStorage.removeItem('cyber_snake_current_user');
+    document.getElementById('auth-overlay').classList.remove('hidden');
+    
+    // 重設分數顯示
+    document.getElementById('current-score').textContent = '000';
+    document.getElementById('personal-high').textContent = '000';
+}
+
+// HTML 安全轉義
 function escapeHTML(str) {
     return str.replace(/[&<>'"]/g, 
         tag => ({
@@ -274,7 +439,7 @@ function escapeHTML(str) {
     );
 }
 
-// 網頁載入後初始化
+// DOM 載入後啟動
 window.addEventListener('DOMContentLoaded', () => {
     initAuth();
 });

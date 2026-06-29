@@ -375,7 +375,7 @@ function changeDirection(x, y) {
 }
 
 // 遊戲結束
-function gameOver() {
+async function gameOver() {
     if (isGameOver) return; // 防止重複觸發死亡與多重定時器 Bug
     isGameOver = true;
     isPlaying = false;
@@ -387,8 +387,8 @@ function gameOver() {
     triggerScreenShake();
     createExplosionParticles();
 
-    // 儲存分數並判斷是否創紀錄
-    const isNewRecord = saveUserScore(score);
+    // 儲存分數並判斷是否創紀錄 (配合 await 等待雲端同步)
+    const isNewRecord = await saveUserScore(score);
 
     // 啟動死亡粒子動畫迴圈
     requestAnimationFrame(updateParticlesLoop);

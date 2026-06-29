@@ -18,10 +18,10 @@
 - **霓虹發光特效**：運用 Canvas 的 `shadowBlur` 與 HSL 漸層，讓蛇身與食物呈現迷幻的 Cyber 霓虹發光。
 - **動態打擊感**：死亡時觸發**畫面震動 (Screen Shake)**，並將蛇身炸裂成數百個隨機物理軌跡的**粒子爆炸特效 (Particle System)**。
 
-### 2. 獨立資料持久化與排行榜系統 (Local Database)
-- **前端模擬登入**：使用瀏覽器 `LocalStorage` 進行用戶帳密驗證。支援**帳號登入/註冊**與**遊客模式 (Guest Mode)**。
-- **殿堂排行榜**：實時更新並排序前 5 名最高得分，並針對前三名提供專屬排名的霓虹名次徽章。
-- **個人紀錄留存**：每個帳號會獨立保存其個人最高分數 (Personal High Score)。
+### 2. 雲端資料庫與本地雙模式排行榜 (Cloud Firebase & Offline Fallback)
+- **真‧全域即時排行榜**：整合 **Google Firebase Realtime Database**，實現所有玩家在不同電腦/手機上玩，資料均能實時同步至雲端，並利用 WebSockets 技術實現「無重整、實時跳動更新」的全域排行榜。
+- **無縫本機降級備用**：當專案未設定 Firebase 金鑰或網路中斷時，系統會自動、無縫地降級為瀏覽器 `LocalStorage` 本機存儲模式，保證核心登入與玩遊戲功能 100% 正常，具備高強健性的網頁設計。
+- **帳號最高分獨立記錄**：每個註冊帳號無論在雲端或本地，都會獨立保存其個人歷史最高紀錄。
 
 ### 3. 強健的遊戲物理與操控防護 (Logical Robustness)
 - **雙重轉向防禦機制 (Double Keypress Prevention)**：為了解決傳統貪食蛇遊戲「極速雙擊鍵導致反向折返自殺」的經典 Bug，本專案首創同時比對「當前移動方向」與「即將踏出方向」的雙重過濾機制，確保操控絕對精確。
@@ -50,5 +50,6 @@ python3 -m http.server 8000
 
 ## 📈 甄試 AI 課程 / 轉職作品集亮點說明（給面試官）
 - **扎實的 JavaScript 原生基本功**：不依賴 TailwindCSS、React 等框架，展現從零建構 Canvas 渲染渲染引擎、座標系統、碰撞判定演算法的能力。
+- **雲端資料庫整合與 Progressive Enhancement（漸進式增強）設計**：整合 Google Firebase Realtime Database 實作「跨裝置全域即時排行榜」，並設計了無縫的 LocalStorage 本地降級備用機制，展現了強健的雲端架構設計能力。
 - **優異的邏輯思維與 Bug 除錯能力**：主動分析並解決「輸入法干擾鍵盤偵測」、「快速雙擊導致折返自殺」等邊緣狀況（Edge Cases），體現嚴謹的程式碼防禦思維。
 - **跨領域技術應用**：結合 Web Audio API 硬體音訊合成、HTML5 Canvas 粒子物理模擬、LocalStorage 數據持久化，展現對瀏覽器 Web API 家族的高度掌握能力。
