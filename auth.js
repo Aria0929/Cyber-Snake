@@ -1,18 +1,6 @@
-// ==========================================
-// 雲端資料庫配置 (Google Firebase)
-// ==========================================
-// 💡 為了實現跨電腦的「真‧全域排行榜」與「跨裝置登入」，本專案整合了 Google Firebase。
-// 💡 若您想啟用全域排行榜，請到 Firebase Console 免費建立專案，並將您的 Config 貼在下方：
-const firebaseConfig = {
-    apiKey: "AIzaSyAwtFU4H427t3C6cJtkdVNEEmt55cb9W1Y",
-    authDomain: "cyber-snake-bee31.firebaseapp.com",
-    databaseURL: "https://cyber-snake-bee31-default-rtdb.firebaseio.com",
-    projectId: "cyber-snake-bee31",
-    storageBucket: "cyber-snake-bee31.firebasestorage.app",
-    messagingSenderId: "141518279757",
-    appId: "1:141518279757:web:c6c4330482062e50043804",
-    measurementId: "G-5YRXT80BMC"
-};
+// 💡 本地 config.js 載入的配置資訊將作為全域變數 firebaseConfig 傳入此處。
+// 💡 config.js 已被設定為 git 忽略，防止私密金鑰流出至 GitHub。
+
 
 // 帳號與排行榜的 LocalStorage Key (備用/本地降級模式使用)
 const USERS_KEY = 'cyber_snake_users';
@@ -143,9 +131,12 @@ async function initAuth() {
 // 檢查並初始化 Firebase 連線
 function checkAndInitFirebase() {
     const subtitle = document.querySelector('.auth-card .subtitle');
-    if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+    // 安全地取得全域變數中的 firebaseConfig
+    const config = typeof firebaseConfig !== 'undefined' ? firebaseConfig : null;
+
+    if (config && config.apiKey && config.apiKey !== "YOUR_API_KEY") {
         try {
-            firebase.initializeApp(firebaseConfig);
+            firebase.initializeApp(config);
             database = firebase.database();
             isFirebaseEnabled = true;
             console.log("⚡ Firebase 雲端資料庫已成功載入！啟用「跨電腦全域排行榜」模式。");
