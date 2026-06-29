@@ -67,6 +67,18 @@ async function initAuth() {
             return;
         }
 
+        // 🛡️ 新增長度限制，防範惡意註冊大數據攻擊
+        if (username.length < 3 || username.length > 12) {
+            authMessage.style.color = '#ff2e93';
+            authMessage.textContent = '用戶名長度需介於 3 到 12 個字元';
+            return;
+        }
+        if (password.length < 6 || password.length > 20) {
+            authMessage.style.color = '#ff2e93';
+            authMessage.textContent = '密碼長度需介於 6 到 20 個字元';
+            return;
+        }
+
         submitBtn.disabled = true;
         authMessage.style.color = '#94a3b8';
         authMessage.textContent = '驗證中...';
@@ -159,17 +171,26 @@ function checkAndInitFirebase() {
 // 帳號資料讀寫函數 (相容雲端 / 本地雙模式)
 // ==========================================
 
+// 🛡️ 單向密碼加密 (SHA-256) - 防止任何人在資料庫查閱玩家明文密碼
+async function hashPassword(password) {
+    const msgBuffer = new TextEncoder().encode(password);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // 註冊帳號
 async function registerUser(username, password) {
+    const hashedPassword = await hashPassword(password);
     if (isFirebaseEnabled) {
         // [雲端模式]
         const snapshot = await database.ref('users/' + username).once('value');
         if (snapshot.exists()) {
             return false; // 使用者已存在
         }
-        // 建立新用戶，預設最高分為 0
+        // 建立新用戶，預設最高分為 0，儲存加密後的雜湊值
         await database.ref('users/' + username).set({
-            password: password,
+            password: hashedPassword,
             highScore: 0
         });
         return true;
@@ -180,7 +201,7 @@ async function registerUser(username, password) {
             return false; // 已存在
         }
         users[username] = {
-            password: password,
+            password: hashedPassword,
             highScore: 0
         };
         localStorage.setItem(USERS_KEY, JSON.stringify(users));
@@ -190,17 +211,18 @@ async function registerUser(username, password) {
 
 // 驗證帳密
 async function verifyUser(username, password) {
+    const hashedPassword = await hashPassword(password);
     if (isFirebaseEnabled) {
         // [雲端模式]
         const snapshot = await database.ref('users/' + username).once('value');
         if (!snapshot.exists()) return false;
         const userData = snapshot.val();
-        return userData.password === password;
+        return userData.password === hashedPassword;
     } else {
         // [本地模式]
         const users = JSON.parse(localStorage.getItem(USERS_KEY)) || {};
         if (!users[username]) return false;
-        return users[username].password === password;
+        return users[username].password === hashedPassword;
     }
 }
 
